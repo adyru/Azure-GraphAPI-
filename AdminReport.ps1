@@ -235,8 +235,6 @@ ForEach($Tenant in $Tenants)
     # Lastly we will search for admin users, you need to use single quotes around the string and use double quotes around the search
     # works in graph explorer https://graph.microsoft.com/v1.0/users/?$search="displayName:admin"
     $uri = 'https://graph.microsoft.com/v1.0/users/?$search="displayName:admin"'
-    #$uri = "https://graph.microsoft.com/v1.0/users?$search='displayName:admin'""
-    #$uri ="https://graph.microsoft.com/v1.0/users/?`$count=true&ConsistencyLevel=eventual&&`$filter=endswith(UserPrincipalName, 'admin')"
 
     $Data = while (-not [string]::IsNullOrEmpty($uri)) {
         # API Call
