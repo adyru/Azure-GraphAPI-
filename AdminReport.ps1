@@ -22,9 +22,9 @@ $Tenants = import-csv  "$($PSScriptRoot)\tenants.csv"
 
 # Format date and foormatoutput files
 $date = get-date -Format dd-MM-yyyy--HH-mm
-$UseOut= "$($PSScriptRoot)\Azure-Admin-Reports-$($date).csv"
-$GroupOut = "$($PSScriptRoot)\Azure-Admin-Group-Reports-$($date).csv"
-$AzureuserAdminArrayOut = "$($PSScriptRoot)\Azure-Admin-Users-Reports-$($date).csv"
+$UseOut= ("{0}\Azure-Admin-Reports-{1}.csv" -f $($PSScriptRoot),$date)
+$GroupOut = ("{0}\Azure-Admin-Group-Reports-{1}.csv" -f $($PSScriptRoot),$date)
+$AzureuserAdminArrayOut = ("{0}\Azure-Admin-Users-Reports-{1}.csv" -f $($PSScriptRoot),$date)
 $UriRoot = "https://graph.microsoft.com/v1.0"
 
 # start the loop through the csv
@@ -289,7 +289,7 @@ ForEach($Tenant in $Tenants)
             Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         }
         catch {
-            $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
+            #$errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
             write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
