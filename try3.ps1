@@ -53,9 +53,10 @@ ForEach($Tenant in $Tenants)
     }
 
     # format the uri we will use to get teh directory roles
-    $uri = ("/{0}/directoryRoles" -f $UriRoot)
+    $uri = ("{0}/directoryRoles" -f $UriRoot)
 
     # If the result is more than 999, we need to read the @odata.nextLink to show more than one side of users
+    $uri
     $Data = while (-not [string]::IsNullOrEmpty($uri)) {
         # API Call
         $apiCall = try {
@@ -88,6 +89,7 @@ ForEach($Tenant in $Tenants)
         ForEach($MemberUser in $MemberUserLoop )
             {
             # Now lets bang them into an array
+            $AzurerAdminObj     = New-Object System.Object
             $AzurerAdminObj    | Add-Member -type NoteProperty -name DisplayName -Value $MemberUser.displayName
             $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value $MemberUser.UserPrincipalName
             $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value "NA"
