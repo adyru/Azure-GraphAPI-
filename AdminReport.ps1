@@ -65,6 +65,7 @@ ForEach($Tenant in $Tenants)
         catch {
             $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
             write-host $errorMessage 
+            write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
         if ($apiCall) {
@@ -162,6 +163,7 @@ ForEach($Tenant in $Tenants)
             $_.ErrorDetails.Message 
             $_.Exception.Response.StatusCode 
             write-host $errorMessage 
+            write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
         if ($apiCall) {
@@ -192,6 +194,7 @@ ForEach($Tenant in $Tenants)
                 Catch
                     {
                     #write-host "$($directoryEligiableRole.principalId) is not a user so we will see if it is a group"
+                    write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
                     
                     }
             # if it fails it shoud be a group
@@ -204,6 +207,7 @@ ForEach($Tenant in $Tenants)
                         {
                         # god knows why we would get here 
                         write-host -ForegroundColor red  "$($directoryEligiableRole.principalId) is not a group or a user"
+                        write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
                         }
                     # get the role that has been assigned byt formating the uri and quering it
                     #write-host -ForegroundColor red "here $($GroupEligiable.displayName)"
@@ -286,7 +290,7 @@ ForEach($Tenant in $Tenants)
         }
         catch {
             $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
-            write-host $errorMessage 
+            write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
         if ($apiCall) {
