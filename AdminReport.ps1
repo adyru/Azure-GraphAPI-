@@ -25,6 +25,7 @@ $date = get-date -Format dd-MM-yyyy--HH-mm
 $UseOut= "$($PSScriptRoot)\Azure-Admin-Reports-$($date).csv"
 $GroupOut = "$($PSScriptRoot)\Azure-Admin-Group-Reports-$($date).csv"
 $AzureuserAdminArrayOut = "$($PSScriptRoot)\Azure-Admin-Users-Reports-$($date).csv"
+$UriRoot = "https://graph.microsoft.com/v1.0"
 
 # start the loop through the csv
 ForEach($Tenant in $Tenants)
@@ -44,15 +45,22 @@ ForEach($Tenant in $Tenants)
     } 
     # Go get the token
     $TokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$TenantName/oauth2/v2.0/token" -Method POST -Body $ReqTokenBody
+
+    # Create the headers
+    $headers = @{
+    Authorization = "Bearer $($Tokenresponse.access_token)"
+    ConsistencyLevel="eventual"
+    }
+
     # format the uri we will use to get teh directory roles
-    $uri = "https://graph.microsoft.com/v1.0/directoryRoles"
+    $uri = ("{0}/directoryRoles" -f $UriRoot)
 
     # If the result is more than 999, we need to read the @odata.nextLink to show more than one side of users
     $Data = while (-not [string]::IsNullOrEmpty($uri)) {
         # API Call
         $apiCall = try {
             # request the data
-            Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
+            Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         }
         catch {
             $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
@@ -67,83 +75,75 @@ ForEach($Tenant in $Tenants)
     }
     # Put the data into a variable so we can use it
     $directoryRoles = ($Data | select-object Value).Value #| select -first 10
+    $i = 0
     # Loop through the data
     ForEach ($directoryRole in $directoryRoles)
         {
+        Write-Progress -Activity "Processing users, groups and applications with direct Role in tenant $($tenantName )..." `
+            -Status ("Checked {0}/{1} Roles" -f $i++, ($directoryRoles| measure).count) `
+            -PercentComplete (($i /($directoryRoles| measure).count) * 100)
         # format the uri again - we are going to look for users first
-        $uri = "https://graph.microsoft.com/v1.0/directoryRoles/$($directoryRole.ID)/members/microsoft.graph.user"
-        $MemberUsers = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
+        $uri = ("{0}/directoryRoles/{1}/members/microsoft.graph.user" -f $UriRoot,$directoryRole.ID)
+        $MemberUsers = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         # If there are any we will put them in an array
         $MemberUserLoop = ($MemberUsers | select-object Value).Value
         # We will loop thought them
         ForEach($MemberUser in $MemberUserLoop )
             {
             # Now lets bang them into an array
-            $AzurerAdminObj   = New-Object System.Object
-            $AzurerAdminObj    | Add-Member -type NoteProperty -name UserDisplayName -Value $MemberUser.displayName
+            $AzurerAdminObj     = New-Object System.Object
+            $AzurerAdminObj    | Add-Member -type NoteProperty -name DisplayName -Value $MemberUser.displayName
             $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value $MemberUser.UserPrincipalName
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value "NA"
             $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $directoryRole.Displayname
             $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Permament"
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Direct"
             $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "User"
-            $AzurerAdminObj      | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
             $AzurerAdmin += $AzurerAdminObj  
             }
         # format the uri again - we are going to look for groups now
-        $uri = "https://graph.microsoft.com/v1.0/directoryRoles/$($directoryRole.ID)/members/microsoft.graph.group"
-        $MemberGroups = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
+        $uri = ("{0}/directoryRoles/{1}/members/microsoft.graph.group" -f $UriRoot,$directoryRole.ID)
+        $MemberGroups = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         $MemberGroupLoop = ($MemberGroups | select-object Value).Value
         ForEach($MemberGroup in $MemberGroupLoop )
         {
-            ## Now lets bang them into an array
-            $AzurerAdminObj   = New-Object System.Object
-            $AzurerAdminObj    | Add-Member -type NoteProperty -name UserDisplayName -Value $MemberGroup.displayName
-            $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value "NA"
+        ## Now lets bang them into an array
+        # format the uri again as we are going to get the group members
+        $uri = ("{0}/groups/{1}/members" -f $UriRoot,$MemberGroup.id)
+        $AzureMemberGroups = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
+        # Add the members into a variable
+        $AzureGroupLoop = ($AzureMemberGroups | select-object Value).Value
+        ForEach($AzureMemberGroup in $AzureGroupLoop  )
+            {
+            $AzurerAdminObj     = New-Object System.Object
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name DisplayName -Value $AzureMemberGroup.displayName
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name UPN -Value $AzureMemberGroup.UserPrincipalName
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value $MemberGroup.Displayname
             $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $directoryRole.Displayname
             $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Permament"
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Indirect"
             $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "Group"
-            $AzurerAdminObj      | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
-            $AzurerAdmin += $AzurerAdminObj  
-            # format the uri again as we are going to get the group members
-            $uri = "https://graph.microsoft.com/v1.0/groups/$($MemberGroup.id)/members"
-            $AzureMemberGroups = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
-            # Add the members into a variable
-            $AzureGroupLoop = ($AzureMemberGroups | select-object Value).Value
-            ForEach($AzureMemberGroup in $AzureGroupLoop  )
-            {
-            # Now we are goig to add them to an array - but only if they are not already a member of hte array , so ignore if there is a row with the same UPN, groupname
-                If(!($AzurerAdminGroup.UPN -contains $AzureMemberGroup.UserPrincipalName -and $AzurerAdminGroup.GroupName  -contains $MemberGroup.Displayname))
-                    {
-                    #write-host -ForegroundColor yellow "Group name is $($MemberGroup.displayName)"
-                    $AzurerAdminGroupObj   = New-Object System.Object
-                    $AzurerAdminGroupObj     | Add-Member -type NoteProperty -name UserDisplayName -Value $AzureMemberGroup.displayName
-                    $AzurerAdminGroupObj      | Add-Member -type NoteProperty -name UPN -Value $AzureMemberGroup.UserPrincipalName
-                    $AzurerAdminGroupObj      | Add-Member -type NoteProperty -name GroupName  -Value $MemberGroup.Displayname
-                    $AzurerAdminGroupObj     | Add-Member -type NoteProperty -name ADType -Value "Group"
-                    $AzurerAdminGroupObj       | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
-                    $AzurerAdminGroup += $AzurerAdminGroupObj 
-                    }
-                else {
-                    # There is amatch so output to console to make a note of why they have not been added
-                    write-host -ForegroundColor yellow "Duplicate Group and member so ignoring - Group name is $($MemberGroup.displayName) and member is  $($AzureMemberGroup.UserPrincipalName) "
-                }
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
+            $AzurerAdmin += $AzurerAdminObj
             }
-
         }
 
-        $uri = "https://graph.microsoft.com/v1.0/directoryRoles/$($directoryRole.ID)/members/microsoft.graph.servicePrincipal"
-        $MemberApps = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
+        $uri = ("{0}/directoryRoles/{1}/members/microsoft.graph.servicePrincipal" -f $UriRoot,$directoryRole.ID)
+        $MemberApps = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         $MemberAppsLoop = ($MemberApps | select-object Value).Value
         ForEach($AppGroup in $MemberAppsLoop )
         {
-            #write-host -ForegroundColor yellow "Group name is $($MemberGroup.displayName)"
-            $AzurerAdminObj   = New-Object System.Object
-            $AzurerAdminObj    | Add-Member -type NoteProperty -name UserDisplayName -Value $AppGroup.displayName
+            $AzurerAdminObj     = New-Object System.Object
+            $AzurerAdminObj    | Add-Member -type NoteProperty -name DisplayName -Value $AppGroup.displayName
             $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value "NA"
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value "NA"
             $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $directoryRole.Displayname
             $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Permament"
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Direct"
             $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "App"
-            $AzurerAdminObj      | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
-            $AzurerAdmin += $AzurerAdminObj  
+            $AzurerAdminObj     | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
+            $AzurerAdmin += $AzurerAdminObj
         }
 
 
@@ -151,16 +151,16 @@ ForEach($Tenant in $Tenants)
     
     #$uri = "https://graph.microsoft.com/v1.0/roleManagement/directory/roleEligibilityScheduleRequests"
     # This took an absolute age to get to - it is for eligiable assignments, teh documentation around it is shocking
-    $uri = "https://graph.microsoft.com/v1.0/roleManagement/directory/roleEligibilityScheduleInstances"
-
+    $uri = ("{0}/roleManagement/directory/roleEligibilityScheduleInstances" -f $UriRoot)
     # If the result is more than 999, we need to read the @odata.nextLink to show more than one side of users
     $Data = while (-not [string]::IsNullOrEmpty($uri)) {
         # API Call
         $apiCall = try {
-            Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
+            Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         }
         catch {
-            $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
+            $_.ErrorDetails.Message 
+            $_.Exception.Response.StatusCode 
             write-host $errorMessage 
         }
         $uri = $null
@@ -172,77 +172,115 @@ ForEach($Tenant in $Tenants)
     }
     # Put the data in a variable
     $directoryEligiableRoles = ($Data | select-object Value).Value #| select -first 10
+    $i  = 0
     # Loop through the entries
     FOrEach($directoryEligiableRole in $directoryEligiableRoles)
         {
+        Write-Progress -Activity "Processing users and groups with Eligiable Role in tenant $($tenantName)..." `
+            -Status ("Checked {0}/{1} Roles" -f $i++, ($directoryEligiableRoles| measure).count) `
+            -PercentComplete (($i /($directoryEligiableRoles| measure).count) * 100)
             # null the variables
             $UserEligiable = $null
             $GroupEligiable = $null
             # format the uri so that we look for the principal the role is assigned to, seeign as t can be a group or user we will start of with users first
-            $uri = "https://graph.microsoft.com/v1.0/users/$($directoryEligiableRole.principalId)"
+            # get the user role
+            $uri = ("{0}/roleManagement/directory/roleDefinitions/{1}" -f $UriRoot,$directoryEligiableRole.roleDefinitionId)
+            $UserEligiableRole = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
+            $uri = ("{0}/users/{1}" -f $UriRoot,$directoryEligiableRole.principalId)
             # try it
-            Try {$UserEligiable = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get}
+            Try {$UserEligiable = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get}
                 Catch
                     {
-                    write-host "$($directoryEligiableRole.principalId) is not a user so we will see if it is a group"
+                    #write-host "$($directoryEligiableRole.principalId) is not a user so we will see if it is a group"
                     
                     }
             # if it fails it shoud be a group
             if(!($UserEligiable ))
                 {
                     # format the uri for a group query
-                    $uri = "https://graph.microsoft.com/v1.0/groups/$($directoryEligiableRole.principalId)"
-                    Try {$GroupEligiable = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get}
+                    $uri = ("{0}/groups/{1}" -f $UriRoot,$directoryEligiableRole.principalId)
+                    Try {$GroupEligiable = Invoke-RestMethod -Headers $headers -Uri $uri -Method Get}
                     Catch
                         {
                         # god knows why we would get here 
                         write-host -ForegroundColor red  "$($directoryEligiableRole.principalId) is not a group or a user"
                         }
                     # get the role that has been assigned byt formating the uri and quering it
-                    $uri = "https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions/$($directoryEligiableRole.roleDefinitionId)"
-                    $UserEligiableRole = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
-                    write-host -ForegroundColor red "here $($GroupEligiable.displayName)"
-                    # Bang it in an array
-                    $AzurerAdminObj   = New-Object System.Object
-                    $AzurerAdminObj    | Add-Member -type NoteProperty -name UserDisplayName -Value $GroupEligiable.displayName
-                    $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value "NA"
-                    $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $UserEligiableRole.Displayname
-                    $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Eligiable"
-                    $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "Group"
-                    $AzurerAdminObj      | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
-                    $AzurerAdmin += $AzurerAdminObj  
-
+                    #write-host -ForegroundColor red "here $($GroupEligiable.displayName)"
+                    $uri = "https://graph.microsoft.com/v1.0/groups/$($GroupEligiable.id)/members"
+                    $AzureMemberGroups = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
+                    # Add the members into a variable
+                    $AzureGroupLoop = ($AzureMemberGroups | select-object Value).Value
+                    ForEach($AzureMemberGroup in $AzureGroupLoop  )
+                        {
+                        # Bang it in an array
+                        $AzurerAdminObj     = New-Object System.Object
+                        $AzurerAdminObj    | Add-Member -type NoteProperty -name DisplayName -Value $AzureMemberGroup.displayName
+                        $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value $AzureMemberGroup.UserPrincipalName
+                        $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value $GroupEligiable.displayName
+                        $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $UserEligiableRole.Displayname
+                        $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Eligiable"
+                        $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Indirect"
+                        $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "Group"
+                        $AzurerAdminObj     | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
+                        $AzurerAdmin += $AzurerAdminObj  
+                        }
                 }
             Else{
                 # it is a user so format the uri and get the role - dupliation of something above so will clean up at some point
-                write-host -ForegroundColor green "here - name is $($UserEligiable.displayName)"
-                $uri = "https://graph.microsoft.com/v1.0/roleManagement/directory/roleDefinitions/$($directoryEligiableRole.roleDefinitionId)"
-                $UserEligiableRole = Invoke-RestMethod -Headers @{Authorization = "Bearer $($Tokenresponse.access_token)"} -Uri $uri -Method Get
                 # Bang it in an array
-                $AzurerAdminObj   = New-Object System.Object
-                $AzurerAdminObj    | Add-Member -type NoteProperty -name UserDisplayName -Value $UserEligiable.displayName
+                $AzurerAdminObj     = New-Object System.Object
+                $AzurerAdminObj    | Add-Member -type NoteProperty -name DisplayName -Value $UserEligiable.displayName
                 $AzurerAdminObj      | Add-Member -type NoteProperty -name UPN -Value $UserEligiable.UserPrincipalName
+                $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value "NA"
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $UserEligiableRole.Displayname
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Eligiable"
+                $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Direct"
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "User"
-                $AzurerAdminObj      | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
+                $AzurerAdminObj     | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
                 $AzurerAdmin += $AzurerAdminObj  
             }
 
         }
 
     }
+
+    ForEach($Tenant in $Tenants)
+    {
+    write-host -ForegroundColor green "Starting to process $($Tenant.TenantName) ...."
+    # setup the variables to use in this run
+    $clientID = $Tenant.AppID
+    $tenantName = $Tenant.TenantName
+    $ClientSecret = $Tenant.AppSecret
+    
+    # Create a hash table for the token request
+    $ReqTokenBody = @{
+        Grant_Type    = "client_credentials"
+        Scope         = "https://graph.microsoft.com/.default"
+        client_Id     = $clientID
+        Client_Secret = $clientSecret
+    } 
+    # Go get the token
+    $TokenResponse = Invoke-RestMethod -Uri "https://login.microsoftonline.com/$TenantName/oauth2/v2.0/token" -Method POST -Body $ReqTokenBody
+
+    # Create the headers
+    $headers = @{
+    Authorization = "Bearer $($Tokenresponse.access_token)"
+    ConsistencyLevel="eventual"
+    }
     # Lastly we will search for admin users, you need to use single quotes around the string and use double quotes around the search
     # works in graph explorer https://graph.microsoft.com/v1.0/users/?$search="displayName:admin"
-    $uri = 'https://graph.microsoft.com/v1.0/users/?$search="displayName:admin"'
-
+    #$uri = 'https://graph.microsoft.com/v1.0/users/?$search="displayName:admin"'
+    $uriroot = "https://graph.microsoft.com/beta"
+    #$uri = ('{0}/users/?$search="displayName:admin"' -f $UriRoot)
+    $uri = ('{0}/users/?$search="displayName:admin"&select=displayName,UserPrincipalName,signInActivity,userType,createddatetime' -f $UriRoot)
     $Data = while (-not [string]::IsNullOrEmpty($uri)) {
         # API Call
         $apiCall = try {
 
             $headers = @{
                 Authorization = "Bearer $($Tokenresponse.access_token)"
-                      ConsistencyLevel="eventual"
+                ConsistencyLevel="eventual"
             }
             Invoke-RestMethod -Headers $headers -Uri $uri -Method Get
         }
@@ -259,17 +297,24 @@ ForEach($Tenant in $Tenants)
     }
     # Add data to array and loop through the entries
     $AzureadminUsers = ($Data | select-object Value).Value 
+    $i = 0
     FOrEach($AzureadminUser in $AzureadminUsers)
         {
+        Write-Progress -Activity "Exporting admin users in tenant $($tenantname) to csv..." `
+            -Status ("Checked {0}/{1} Roles" -f $i++, ($AzureadminUsers | measure).count) `
+            -PercentComplete (($i /($AzureadminUsers | measure).count) * 100)
             #bang them in an array
             $AzureuserAdminArrayObj   = New-Object System.Object
             $AzureuserAdminArrayObj     | Add-Member -type NoteProperty -name UserDisplayName -Value $AzureadminUser.displayName
             $AzureuserAdminArrayObj       | Add-Member -type NoteProperty -name UPN -Value $AzureadminUser.UserPrincipalName
+            $AzureuserAdminArrayObj       | Add-Member -type NoteProperty -name LastSignin -Value $AzureadminUser.signInActivity.lastSignInDateTime
+            $AzureuserAdminArrayObj       | Add-Member -type NoteProperty -name Created -Value $AzureadminUser.createddatetime
             $AzureuserAdminArrayObj      | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
             $AzureuserAdminArray  += $AzureuserAdminArrayObj 
         }
+    }
 
    # Last up export the data
     $AzurerAdmin | export-csv $UseOut -NoClobber -NoTypeInformation
-    $AzurerAdminGroup | export-csv $GroupOut -NoClobber -NoTypeInformation
+  #  $AzurerAdminGroup | export-csv $GroupOut -NoClobber -NoTypeInformation
     $AzureuserAdminArray | export-csv $AzureuserAdminArrayOut -NoClobber -NoTypeInformation
