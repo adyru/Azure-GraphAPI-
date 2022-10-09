@@ -243,7 +243,7 @@ ForEach($Tenant in $Tenants)
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name GroupName  -Value "NA"
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name Role  -Value $UserEligiableRole.Displayname
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name Type  -Value "Eligiable"
-                $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Indirect"
+                $AzurerAdminObj     | Add-Member -type NoteProperty -name Assignment  -Value "Direct"
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name ADType -Value "User"
                 $AzurerAdminObj     | Add-Member -type NoteProperty -name Tenant  -Value $TenantName
                 $AzurerAdmin += $AzurerAdminObj  
