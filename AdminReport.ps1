@@ -12,19 +12,21 @@ Rows
     4. AppSecret - app secret
 #>
 
+cls
+write-host -ForegroundColor yellow "Most of the errors on screen can be ignored - we have to check if an object is a user, then a group and finally an app, so 404s can be just noise. Same with roleEligibilityScheduleInstances 400s "
 # Initialise the arrays
 $AzurerAdminGroup = @()
 $AzurerAdmin  = @()
 $AzureuserAdminArray  = @()
 
 # Import the cav
-$Tenants = import-csv  "$($PSScriptRoot)\tenants.csv"
+$Tenants = import-csv  "$($PSScriptRoot)\tenants\tenants.csv"
 
 # Format date and foormatoutput files
 $date = get-date -Format dd-MM-yyyy--HH-mm
 $UseOut= ("{0}\Azure-Admin-Reports-{1}.csv" -f $($PSScriptRoot),$date)
-$GroupOut = ("{0}\Azure-Admin-Group-Reports-{1}.csv" -f $($PSScriptRoot),$date)
-$AzureuserAdminArrayOut = ("{0}\Azure-Admin-Users-Reports-{1}.csv" -f $($PSScriptRoot),$date)
+$GroupOut = ("{0}\Azure-Admin-Role-Export-{1}.csv" -f $($PSScriptRoot),$date)
+$AzureuserAdminArrayOut = ("{0}\Azure-Admin-Users-Export-{1}.csv" -f $($PSScriptRoot),$date)
 $UriRoot = "https://graph.microsoft.com/v1.0"
 
 # start the loop through the csv
@@ -65,7 +67,7 @@ ForEach($Tenant in $Tenants)
         catch {
             $errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
             write-host $errorMessage 
-            write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
+            write-host -ForegroundColor Red ("Error connecting to {0} code is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
         if ($apiCall) {
@@ -163,7 +165,7 @@ ForEach($Tenant in $Tenants)
             $_.ErrorDetails.Message 
             $_.Exception.Response.StatusCode 
             write-host $errorMessage 
-            write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
+            write-host -ForegroundColor Red ("Error connecting to {0} code is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
         if ($apiCall) {
@@ -194,7 +196,7 @@ ForEach($Tenant in $Tenants)
                 Catch
                     {
                     #write-host "$($directoryEligiableRole.principalId) is not a user so we will see if it is a group"
-                    write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
+                    write-host -ForegroundColor Red ("Error connecting to {0} code is '{1}'" -f $uri ,$_.Exception.Message)
                     
                     }
             # if it fails it shoud be a group
@@ -207,7 +209,7 @@ ForEach($Tenant in $Tenants)
                         {
                         # god knows why we would get here 
                         write-host -ForegroundColor red  "$($directoryEligiableRole.principalId) is not a group or a user"
-                        write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
+                        write-host -ForegroundColor Red ("Error connecting to {0} code is '{1}'" -f $uri ,$_.Exception.Message)
                         }
                     # get the role that has been assigned byt formating the uri and quering it
                     #write-host -ForegroundColor red "here $($GroupEligiable.displayName)"
@@ -290,7 +292,7 @@ ForEach($Tenant in $Tenants)
         }
         catch {
             #$errorMessage = $_.ErrorDetails.Message | ConvertFrom-Json
-            write-host -ForegroundColor Red ("Error code connecting to {0} is '{1}'" -f $uri ,$_.Exception.Message)
+            write-host -ForegroundColor Red ("Error connecting to {0} code is '{1}'" -f $uri ,$_.Exception.Message)
         }
         $uri = $null
         if ($apiCall) {
@@ -305,7 +307,7 @@ ForEach($Tenant in $Tenants)
     FOrEach($AzureadminUser in $AzureadminUsers)
         {
         Write-Progress -Activity "Exporting admin users in tenant $($tenantname) to csv..." `
-            -Status ("Checked {0}/{1} Roles" -f $i++, ($AzureadminUsers | measure).count) `
+            -Status ("Exported {0}/{1} Users" -f $i++, ($AzureadminUsers | measure).count) `
             -PercentComplete (($i /($AzureadminUsers | measure).count) * 100)
             #bang them in an array
             $AzureuserAdminArrayObj   = New-Object System.Object
